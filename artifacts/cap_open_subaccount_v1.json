@@ -1,0 +1,183 @@
+{
+  "artifact_id": "cap_open_subaccount_v1",
+  "version": 1,
+  "app_target": {
+    "vendor_app": "ledgerhand-mock-bank",
+    "entry_url": "http://127.0.0.1:8420/members/search"
+  },
+  "goal_description": "Look up member 1003 and open a new checking sub-account with a $75 opening deposit, reaching the confirmation screen.",
+  "inputs": [
+    {
+      "name": "member_id",
+      "type": "string",
+      "required": true,
+      "description": "Numeric member ID to search for",
+      "values": null,
+      "min": null
+    },
+    {
+      "name": "account_type",
+      "type": "enum",
+      "required": true,
+      "description": "Account type to open",
+      "values": [
+        "checking",
+        "savings"
+      ],
+      "min": null
+    },
+    {
+      "name": "opening_deposit",
+      "type": "integer",
+      "required": true,
+      "description": "Opening deposit amount in whole dollars",
+      "values": null,
+      "min": 0
+    }
+  ],
+  "outputs": [
+    {
+      "name": "account_number",
+      "type": "string",
+      "source": "extracted",
+      "description": "The newly created account's number"
+    },
+    {
+      "name": "confirmation_id",
+      "type": "string",
+      "source": "extracted",
+      "description": "Confirmation identifier for this transaction"
+    }
+  ],
+  "steps": [
+    {
+      "step_id": 1,
+      "action": "type_text",
+      "locator": {
+        "strategy": "label",
+        "value": "Member ID",
+        "role": null,
+        "fallback": null
+      },
+      "value": "{{member_id}}",
+      "checkpoint": null,
+      "risk_class": "safe",
+      "extractions": null,
+      "business_outcome_branches": null
+    },
+    {
+      "step_id": 2,
+      "action": "click",
+      "locator": {
+        "strategy": "role",
+        "value": "Search",
+        "role": "button",
+        "fallback": null
+      },
+      "value": null,
+      "checkpoint": null,
+      "risk_class": "safe",
+      "extractions": null,
+      "business_outcome_branches": null
+    },
+    {
+      "step_id": 3,
+      "action": "click",
+      "locator": {
+        "strategy": "role",
+        "value": "Open Sub-Account",
+        "role": "link",
+        "fallback": null
+      },
+      "value": null,
+      "checkpoint": null,
+      "risk_class": "safe",
+      "extractions": null,
+      "business_outcome_branches": null
+    },
+    {
+      "step_id": 4,
+      "action": "select_option",
+      "locator": {
+        "strategy": "label",
+        "value": "Account Type",
+        "role": null,
+        "fallback": null
+      },
+      "value": "{{account_type}}",
+      "checkpoint": null,
+      "risk_class": "safe",
+      "extractions": null,
+      "business_outcome_branches": null
+    },
+    {
+      "step_id": 5,
+      "action": "type_text",
+      "locator": {
+        "strategy": "label",
+        "value": "Opening Deposit",
+        "role": null,
+        "fallback": null
+      },
+      "value": "{{opening_deposit}}",
+      "checkpoint": null,
+      "risk_class": "safe",
+      "extractions": null,
+      "business_outcome_branches": null
+    },
+    {
+      "step_id": 6,
+      "action": "click",
+      "locator": {
+        "strategy": "role",
+        "value": "Submit",
+        "role": "button",
+        "fallback": null
+      },
+      "value": null,
+      "checkpoint": {
+        "type": "element_visible",
+        "locator": {
+          "strategy": "role",
+          "value": "Account Opened",
+          "role": "heading",
+          "fallback": null
+        }
+      },
+      "risk_class": "irreversible",
+      "extractions": [
+        {
+          "output_name": "account_number",
+          "locator": {
+            "strategy": "css",
+            "value": "tr:has(> td:text-is('Account Number')) > td:nth-child(2)",
+            "role": null,
+            "fallback": null
+          }
+        },
+        {
+          "output_name": "confirmation_id",
+          "locator": {
+            "strategy": "css",
+            "value": "tr:has(> td:text-is('Confirmation ID')) > td:nth-child(2)",
+            "role": null,
+            "fallback": null
+          }
+        }
+      ],
+      "business_outcome_branches": null
+    }
+  ],
+  "recorded_from": {
+    "discovery_run_id": "discovery_run_20260815T190600",
+    "recorded_at": "2026-08-15T23:15:46.892273+00:00",
+    "model": "claude-sonnet-4-6"
+  },
+  "review_status": "draft",
+  "safety": {
+    "allowlist_scope": "ledgerhand-mock-bank:members/*",
+    "irreversible_step_ids": [
+      6
+    ]
+  }
+}
