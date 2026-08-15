@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Testing / linting
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Playwright
+.playwright-browsers/
+test-results/
+playwright-report/
+
+# Evidence: keep the directory structure, ignore raw/large run artifacts
+evidence/**/*.png
+evidence/**/*.jpg
+evidence/**/*.jpeg
+evidence/**/*.webm
+evidence/**/*.mp4
+evidence/**/*.log
+!evidence/README.md
+
+# OS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+.claude/settings.local.json

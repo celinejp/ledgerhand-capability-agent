@@ -1,0 +1,1 @@
+# Dependencies for the self-contained mock core-banking Flask app.
