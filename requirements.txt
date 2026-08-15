@@ -1,1 +1,2 @@
 # Dependencies for src/ (the capability agent: discovery, compilation, replay, guardrails).
+playwright>=1.45,<2.0
