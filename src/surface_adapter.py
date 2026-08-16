@@ -158,11 +158,21 @@ class SurfaceAdapter:
             "elements": _parse_accessibility_snapshot(snapshot_text),
         }
 
+    def get_page_text(self) -> str:
+        """Return the full visible text content of the page body."""
+        return self.page.inner_text("body")
+
+    def current_url(self) -> str:
+        return self.page.url
+
+    def screenshot(self, path: Union[str, Path]) -> None:
+        self.page.screenshot(path=str(path))
+
     def _save_screenshot(self) -> Path:
         self._screenshot_count += 1
         filename = f"{time.strftime('%Y%m%dT%H%M%S')}_{self._screenshot_count:04d}.png"
         path = self.evidence_dir / filename
-        self.page.screenshot(path=str(path))
+        self.screenshot(path)
         return path
 
     # -- locator resolution ----------------------------------------------

@@ -1,0 +1,14 @@
+{
+  "status": "success",
+  "outputs": {
+    "account_number": "9946356774",
+    "confirmation_id": "CONF-B3N0VHR9"
+  },
+  "outcome": null,
+  "message": null,
+  "failure_type": null,
+  "expected": null,
+  "observed": null,
+  "screenshot_path": null,
+  "step_id": null
+}
