@@ -28,10 +28,8 @@ htmlcov/
 test-results/
 playwright-report/
 
-# Evidence: keep the directory structure, ignore raw/large run artifacts
-evidence/**/*.png
-evidence/**/*.jpg
-evidence/**/*.jpeg
+# Evidence: screenshots are tracked normally (small, and the actual
+# deliverable); only disposable run artifacts are ignored.
 evidence/**/*.webm
 evidence/**/*.mp4
 evidence/**/*.log
