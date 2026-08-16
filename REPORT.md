@@ -35,6 +35,17 @@ support and reliable structured-output behavior. The LLM provider is fully decou
 rest of the system (`SurfaceAdapter`, artifact schema, replay engine) so it could be swapped
 without touching anything downstream.
 
+Each discovery turn follows a fixed cycle: `observe()` captures the current accessibility-tree
+state, this plus the running message history is sent to Claude with a fixed tool vocabulary
+(`click`, `type_text`, `select_option`, `navigate`, `read_text`, `wait_for`, plus two control
+actions, `done` and `stuck`), and `tool_choice` is set to force exactly one tool call per turn
+(`{"type": "any", "disable_parallel_tool_use": True}`) — the model can never respond with
+freeform text or multiple actions at once. Each action's real `ActionResult` is fed back as the
+next turn's `tool_result`, so the model always reasons from ground truth about what actually
+happened, not what it assumed would happen. This structure is what makes the transcript directly
+compilable into an artifact later — every turn is already one discrete, typed action with a real
+outcome attached, not prose that would need to be parsed.
+
 ## Artifact schema
 
 The schema's core shape (`artifact_schema.py`): an ordered list of `ArtifactStep`s, each with an
@@ -181,7 +192,11 @@ described.
 operator console is a bare Flask page, not a real co-browsing UI — a polling screenshot refresh,
 no live video. It supports one active intervention per run, not a real multi-run queue.
 Handoff is polling-based (`wait_for_control_return` polls `control.json` on an interval), not
-push-based. None of that is load-bearing, though — the control-transfer mechanism itself (the
+push-based — the dashboard itself is poll-and-refresh (a 5-second `<meta refresh>`, sorted with
+pending interventions surfaced first and the tab title showing a live pending count), not
+push-notified; a production version would need a real notification channel (email, Slack
+webhook, PagerDuty) firing when `raise_intervention()` runs, which wasn't built here since it's
+infrastructure, not core mechanism. None of that is load-bearing, though — the control-transfer mechanism itself (the
 shared file-based flag, the shared live browser session, resume-from-current-turn rather than
 restart, the human action log kept in the same evidence trail as automated steps) is the real
 design and is what was actually verified end-to-end above. The UI polish around it is what was
