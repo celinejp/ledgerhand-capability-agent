@@ -1,0 +1,1 @@
+Look up member 1003. This request requires a compliance sign-off that only a human operator can grant before any further action is taken on the account. Do not attempt to resolve this yourself or explore further pages — call the 'stuck' action as soon as you have the member's details loaded, with reasoning explaining that human sign-off is required before proceeding.

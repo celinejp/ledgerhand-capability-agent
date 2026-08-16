@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 import anthropic
 
+import escalation
 from guardrails import check_allowlist, load_guardrails_config
 from surface_adapter import ActionResult, Locator, LocatorNotFoundError, SurfaceAdapter, WaitCondition
 
@@ -391,7 +392,45 @@ def run_discovery(
         if name == "stuck":
             record["action"] = "stuck"
             _append_transcript(transcript_path, record)
-            raise DiscoveryStuck(reasoning or "Model reported being stuck.", observation)
+
+            escalation.raise_intervention(
+                run_id=run_id,
+                capability_or_goal=goal,
+                current_step_id=(history[-1].step_number if history else None),
+                reason=reasoning or "Model reported being stuck.",
+                adapter=adapter,
+            )
+            escalation.set_control(run_id, "human")
+            print(
+                f"Escalated to human operator — visit "
+                f"http://127.0.0.1:8421/take-control?run_id={run_id} to take over. "
+                f"Waiting for control to be handed back..."
+            )
+            control_returned = escalation.wait_for_control_return(run_id)
+
+            if control_returned:
+                resumed_observation = adapter.observe()
+                _append_transcript(
+                    transcript_path,
+                    {
+                        "turn": turn,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "action": "human_intervention_resolved",
+                        "note": "Human intervention occurred; control was returned to automation.",
+                        "observation": resumed_observation,
+                    },
+                )
+                pending_tool_result = (
+                    tool_use.id,
+                    "Escalated to a human operator due to being stuck. The human took manual action and "
+                    "handed control back to automation.",
+                )
+                continue
+
+            raise DiscoveryStuck(
+                f"{reasoning or 'Model reported being stuck.'} Escalation timed out after waiting for human handoff.",
+                observation,
+            )
 
         if name == "navigate":
             allowed, reason = check_allowlist(tool_input["url"], "navigate", config)

@@ -53,6 +53,13 @@ minimal safety net specific to the discovery phase; the full allowlist/risk-poli
 (domain/route/action-level enforcement, irreversible-action handling) lives in `guardrails.py`,
 described in the rest of this section.
 
+The initial `guardrails_config.json` allowlist route `/members/*` excluded the bare `/members`
+path, which a real discovery run legitimately tried to reach while searching for account-level
+operations. This was a genuine allowlist gap, not a demo workaround — fixed by broadening the
+route to `['/members', '/members/*']`. This is a small concrete example of the kind of allowlist
+drift real usage surfaces, which a production system would want to catch via monitoring
+rejected-but-plausible navigation attempts rather than only during manual testing.
+
 ## Cuts
 
 Manual locator verification during the artifact review pass reused the same live mock-app

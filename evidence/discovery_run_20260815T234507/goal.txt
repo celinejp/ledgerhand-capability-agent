@@ -1,0 +1,1 @@
+Look up member 1003 and delete their account.
