@@ -1,7 +1,6 @@
 """Deterministic executor for capability artifacts (no LLM in the loop); returns success, known business outcome, or hard failure."""
 
 import json
-import logging
 import re
 import time
 from dataclasses import asdict, dataclass
@@ -10,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from artifact_schema import ArtifactStep, CapabilityArtifact
+from guardrails import check_allowlist, check_risk_policy, load_guardrails_config, redact, request_confirmation
 from surface_adapter import ActionResult, Locator, LocatorNotFoundError, SurfaceAdapter, WaitCondition
 
 DEFAULT_CHECKPOINT_TIMEOUT_MS = 5000
@@ -23,8 +23,6 @@ KNOWN_BUSINESS_OUTCOME_SIGNATURES = [
 ]
 
 KNOWN_RECOVERABLE_STEPS: set = set()
-
-logger = logging.getLogger(__name__)
 
 _PARAM_PLACEHOLDER_RE = re.compile(r"\{\{(\w+)\}\}")
 
@@ -208,9 +206,9 @@ def _run_extractions(adapter: SurfaceAdapter, step: ArtifactStep, outputs: Dict[
 # ---------------------------------------------------------------------------
 
 
-def _append_log(path: Path, record: Dict[str, Any]) -> None:
+def _append_log(path: Path, record: Dict[str, Any], config: dict) -> None:
     with path.open("a") as f:
-        f.write(json.dumps(record, default=str) + "\n")
+        f.write(json.dumps(redact(record, config), default=str) + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +218,8 @@ def _append_log(path: Path, record: Dict[str, Any]) -> None:
 
 def replay_artifact(artifact: CapabilityArtifact, params: Dict[str, Any], adapter: SurfaceAdapter) -> ReplayResult:
     """Deterministically execute a CapabilityArtifact against a live SurfaceAdapter session. No LLM involved."""
+    config = load_guardrails_config()
+
     run_id = time.strftime("%Y%m%dT%H%M%S")
     run_dir = Path("evidence") / f"replay_run_{run_id}"
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -234,14 +234,27 @@ def replay_artifact(artifact: CapabilityArtifact, params: Dict[str, Any], adapte
     if invalid is not None:
         return _finish(invalid)
 
-    nav_result = adapter.navigate(artifact.app_target["entry_url"])
+    entry_url = artifact.app_target["entry_url"]
+    allowed, reason = check_allowlist(entry_url, "navigate", config)
+    if not allowed:
+        return _finish(
+            ReplayResult(
+                status="failure",
+                failure_type="guardrail_violation",
+                step_id=0,
+                expected="entry URL to be permitted by the guardrails allowlist",
+                observed=reason,
+            )
+        )
+
+    nav_result = adapter.navigate(entry_url)
     if not nav_result.success:
         return _finish(
             ReplayResult(
                 status="failure",
                 failure_type="action_failed",
                 step_id=0,
-                expected=f"navigate to {artifact.app_target['entry_url']!r} to succeed",
+                expected=f"navigate to {entry_url!r} to succeed",
                 observed=nav_result.detail or "navigation failed",
                 screenshot_path=_save_failure_screenshot(adapter, run_dir, 0),
             )
@@ -252,13 +265,42 @@ def replay_artifact(artifact: CapabilityArtifact, params: Dict[str, Any], adapte
     for step in artifact.steps:
         value = _substitute_params(step.value, params)
 
-        if step.risk_class == "irreversible":
-            logger.warning(
-                "Step %d (%s) is marked irreversible; executing without guardrail enforcement "
-                "(guardrails.py policy not yet integrated).",
-                step.step_id,
-                step.action,
+        decision, policy_reason = check_risk_policy(step, config)
+        if decision == "block":
+            return _finish(
+                ReplayResult(
+                    status="failure",
+                    failure_type="guardrail_violation",
+                    step_id=step.step_id,
+                    expected="step to be permitted by risk policy",
+                    observed=policy_reason,
+                )
             )
+        if decision == "require_confirmation":
+            confirmed = request_confirmation(step, {"raw_value": step.value, "resolved_value": value})
+            if not confirmed:
+                return _finish(
+                    ReplayResult(
+                        status="failure",
+                        failure_type="guardrail_violation",
+                        step_id=step.step_id,
+                        expected="step to be permitted by risk policy",
+                        observed="user declined confirmation",
+                    )
+                )
+
+        if step.action == "navigate":
+            allowed, reason = check_allowlist(value or "", "navigate", config)
+            if not allowed:
+                return _finish(
+                    ReplayResult(
+                        status="failure",
+                        failure_type="guardrail_violation",
+                        step_id=step.step_id,
+                        expected="navigate target to be permitted by the guardrails allowlist",
+                        observed=reason,
+                    )
+                )
 
         result = _execute_step_action(adapter, step, value)
 
@@ -271,6 +313,7 @@ def replay_artifact(artifact: CapabilityArtifact, params: Dict[str, Any], adapte
                 "result": asdict(result),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
+            config,
         )
 
         if not result.success and step.step_id not in KNOWN_RECOVERABLE_STEPS:

@@ -6,10 +6,10 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
 
 import anthropic
 
+from guardrails import check_allowlist, load_guardrails_config
 from surface_adapter import ActionResult, Locator, LocatorNotFoundError, SurfaceAdapter, WaitCondition
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
@@ -322,7 +322,7 @@ def run_discovery(
     Raises DiscoveryStuck, DiscoveryDeadEnd, or SafetyViolation otherwise.
     """
     client = client or anthropic.Anthropic()
-    allowed_host = urlparse(start_url).hostname
+    config = load_guardrails_config()
 
     run_id = time.strftime("%Y%m%dT%H%M%S")
     run_dir = Path("evidence") / f"discovery_run_{run_id}"
@@ -330,6 +330,10 @@ def run_discovery(
     adapter.evidence_dir = run_dir  # keep screenshots in this run's folder, not a shared one
     (run_dir / "goal.txt").write_text(goal)
     transcript_path = run_dir / "transcript.jsonl"
+
+    allowed, reason = check_allowlist(start_url, "navigate", config)
+    if not allowed:
+        raise SafetyViolation(f"Refusing to navigate to {start_url!r}: {reason}", start_url)
 
     nav_result = adapter.navigate(start_url)
     if not nav_result.success:
@@ -390,32 +394,28 @@ def run_discovery(
             raise DiscoveryStuck(reasoning or "Model reported being stuck.", observation)
 
         if name == "navigate":
-            target_host = urlparse(tool_input["url"]).hostname
-            if target_host != allowed_host:
+            allowed, reason = check_allowlist(tool_input["url"], "navigate", config)
+            if not allowed:
                 record["action"] = "navigate"
                 record["blocked"] = True
-                record["safety_violation"] = f"host {target_host!r} does not match allowed host {allowed_host!r}"
+                record["safety_violation"] = reason
                 _append_transcript(transcript_path, record)
                 raise SafetyViolation(
-                    f"Refusing to navigate to {tool_input['url']!r}: host {target_host!r} does not match "
-                    f"allowed host {allowed_host!r}.",
+                    f"Refusing to navigate to {tool_input['url']!r}: {reason}",
                     tool_input["url"],
                 )
 
         result, locator, output = _execute_action(adapter, name, tool_input)
 
         post_action_url = adapter.observe()["url"]
-        post_action_host = urlparse(post_action_url).hostname
-        if post_action_host != allowed_host:
+        allowed, reason = check_allowlist(post_action_url, name, config)
+        if not allowed:
             record["action"] = name
             record["blocked"] = True
-            record["safety_violation"] = (
-                f"post-action host {post_action_host!r} does not match allowed host {allowed_host!r}"
-            )
+            record["safety_violation"] = reason
             _append_transcript(transcript_path, record)
             raise SafetyViolation(
-                f"Action {name!r} navigated off-host to {post_action_url!r}: host {post_action_host!r} does not "
-                f"match allowed host {allowed_host!r}.",
+                f"Action {name!r} navigated off-allowlist to {post_action_url!r}: {reason}",
                 post_action_url,
             )
 

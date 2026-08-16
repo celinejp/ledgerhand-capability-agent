@@ -1,0 +1,11 @@
+{
+  "status": "failure",
+  "outputs": null,
+  "outcome": null,
+  "message": null,
+  "failure_type": "locator_not_found",
+  "expected": "click on role:Nonexistent Button",
+  "observed": "Could not resolve locator after trying: role:Nonexistent Button",
+  "screenshot_path": "evidence/replay_run_20260815T231143/failure_step_2.png",
+  "step_id": 2
+}

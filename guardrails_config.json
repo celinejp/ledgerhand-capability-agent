@@ -1,0 +1,13 @@
+{
+  "allowlist": {
+    "domains": ["127.0.0.1", "localhost"],
+    "routes": ["/members/*"],
+    "actions_allowed": ["click", "type_text", "select_option", "navigate", "read_text", "wait_for"]
+  },
+  "risk_policy": {
+    "irreversible_handling": "require_confirmation"
+  },
+  "redaction": {
+    "never_log_fields": ["password", "ssn", "account_pin", "credentials"]
+  }
+}
