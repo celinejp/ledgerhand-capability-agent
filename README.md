@@ -51,7 +51,8 @@ Two terminals, both from the repo root with the venv activated.
 python3 mock_app/app.py
 ```
 
-Serves at `http://127.0.0.1:8420`.
+Serves at `http://127.0.0.1:8420/members/search` (the app has no root route, so the bare port
+URL 404s).
 
 **Terminal 2 — operator console (optional, only for the escalation/handoff demo):**
 
@@ -63,35 +64,21 @@ Serves at `http://127.0.0.1:8421`.
 
 ## Demo path: discover, then replay
 
-**1. Run a real discovery session** against the mock app:
+**1. Run a real discovery session:**
 
 ```bash
 python3 scripts/run_discovery_demo.py
 ```
 
-This is a real entry point, not a stub — it loads `.env`, launches a visible (non-headless)
-Chromium window, and runs `run_discovery()` against `http://127.0.0.1:8420/members/search` with
-a fixed goal ("Look up member 1003 and open a new checking sub-account with a $75 opening
-deposit, reaching the confirmation screen."). The browser is visible on purpose: automation and
-a human operator are meant to share the same live session (see [REPORT.md](REPORT.md)'s
-Escalation & handoff section), so nothing about this loop assumes a hidden browser. To try a
-different goal, edit the `GOAL` and `START_URL` constants at the top of the script, or write a
-short script of your own that calls `run_discovery(goal, start_url, adapter)` directly — there's
-no CLI flag for it yet.
+Real Claude API calls, a real visible browser, a fixed goal against
+`http://127.0.0.1:8420/members/search` (edit `GOAL`/`START_URL` in the script to change it).
+Writes to `evidence/discovery_run_<timestamp>/` (see REPORT.md for the design rationale).
 
-Each run writes its transcript and screenshots to `evidence/discovery_run_<timestamp>/`.
+**2. The resulting artifact** is already reviewed and parameterized at
+[`artifacts/open_member_subaccount_v1.json`](artifacts/open_member_subaccount_v1.json).
 
-**2. The resulting artifact** already lands, reviewed and parameterized, at
-[`artifacts/cap_open_subaccount_v1.json`](artifacts/cap_open_subaccount_v1.json) — this is the
-real output of that discovery goal after a human review pass turned concrete values into
-`{{member_id}}`/`{{account_type}}`/`{{opening_deposit}}` placeholders, marked the confirmation
-step's checkpoint, and flagged the final submit as `risk_class: "irreversible"`. There's no
-separate compile script committed yet, so turning a fresh discovery transcript into a new
-artifact currently means calling `compiler.compile_artifact()` directly — the existing artifact
-is the ready-to-replay example.
-
-**3. Replay that artifact** with real parameters. There's no committed replay script either, so
-this is a short one-liner against the real, already-existing helpers:
+**3. Replay it** with real parameters — no committed replay script yet, so this is a one-liner
+against the real helpers:
 
 ```bash
 python3 -c "
@@ -101,7 +88,7 @@ from compiler import load_artifact
 from replay_engine import replay_artifact
 from surface_adapter import SurfaceAdapter
 
-artifact = load_artifact('artifacts/cap_open_subaccount_v1.json')
+artifact = load_artifact('artifacts/open_member_subaccount_v1.json')
 params = {'member_id': '1001', 'account_type': 'checking', 'opening_deposit': 50}
 
 with sync_playwright() as p:
@@ -115,20 +102,78 @@ print(result)
 "
 ```
 
-Step 6 of this artifact is marked irreversible, so this will pause on a real terminal prompt
-(`Proceed? [y/N]:`) before submitting — type `y` to let it continue.
+Step 6 is irreversible, so this pauses on a real `Proceed? [y/N]:` prompt — type `y`. Writes to
+`evidence/replay_run_<timestamp>/`.
 
-**What the result looks like.** `replay_artifact()` returns a `ReplayResult` with a `status` of:
-- `"success"` — goal achieved; `outputs` holds the extracted values (e.g.
-  `{'account_number': '4324837542', 'confirmation_id': 'CONF-C07016CY'}`).
-- `"business_outcome"` — a known, named non-error outcome (e.g. `member_not_found`), not a bug —
-  `outcome` names it.
-- `"failure"` — something went wrong; `failure_type` is one of `invalid_params`,
-  `locator_not_found`, `action_failed`, `session_expired`, `checkpoint_not_met`, or
-  `guardrail_violation`, with `expected`/`observed` describing the mismatch and (usually)
-  `screenshot_path` pointing at evidence of the failure.
+**Result status:** `success` (goal achieved, real data in `outputs`) · `business_outcome` (a
+valid non-error answer, e.g. member not found) · `failure` — `failure_type` is one of
+`invalid_params`, `locator_not_found`, `action_failed`, `session_expired`, `checkpoint_not_met`,
+`guardrail_violation`, or `not_approved` (see REPORT.md's Safety section for the approval gate).
 
-Every run's transcript, screenshots, and result land under `evidence/replay_run_<timestamp>/`.
+### Verify the confidence score
+
+```bash
+python3 scripts/check_confidence.py open_member_subaccount_v1
+```
+
+Prints `total_runs`, `success_count`, `success_rate`, and `last_run_status` computed live from
+the real replay history file, so the numbers cited in REPORT.md's Cuts section can be checked
+directly rather than taken on faith.
+
+## Control panel (presentation-friendly UI)
+
+```bash
+python3 src/control_panel/app.py
+```
+
+Serves at `http://127.0.0.1:8422` with two forms — run a discovery goal, or replay an artifact,
+with input fields rendered dynamically from that artifact's real `inputs` list. It's a thin
+wrapper around the same `run_discovery()`/`replay_artifact()` functions above, not a new
+execution path — the scripts and one-liners still work identically and independently of it. See
+REPORT.md's Safety section for how it handles the irreversible-step confirmation without hanging
+a web request.
+
+## Trying it out
+
+Beyond the basic demo above, here's how to see the system's different behaviors — a clean
+success, an expected non-error outcome, a real failure, and the human escalation path.
+
+### Seed data
+
+`mock_app/app.py` starts every process with the same four members, one of whom already has an
+account:
+
+| Member ID | Name | Starting balance | Pre-existing account |
+|---|---|---|---|
+| `1001` | Alice Whitfield | $4,523.10 | none |
+| `1002` | Marcus Boyd | $128.50 | savings |
+| `1003` | Priya Anand | $9,876.00 | none |
+| `1004` | Diego Castillo | $0.00 | none |
+
+The mock app's data lives in memory only, so it resets to this table every time
+`mock_app/app.py` restarts. If a member already has the account type you're trying to open
+(either from this seed data or from a prior run), you'll see a `business_outcome` result instead
+of `success` — that's expected, not a bug. Use a different member ID or account type, or restart
+`mock_app/app.py` to reset.
+
+All in the control panel's Replay Artifact form (`http://127.0.0.1:8422/`,
+`open_member_subaccount_v1.json`) unless noted:
+
+- **A successful run:** `member_id` `1001`, `account_type` `checking`, `opening_deposit` `60`
+  (see Seed data above for other members). Result page shows a real account number and
+  confirmation ID.
+- **An expected non-error outcome:** `member_id` `9999` (doesn't exist) → `business_outcome:
+  member_not_found`, not a crash.
+- **A structural failure:** `account_type` set to something invalid like `business` →
+  `failure: invalid_params`, caught before a browser opens.
+- **The confirmation gate:** valid, success-shaped params still land on a confirmation page
+  first (opening an account is irreversible) — check the box and submit again to run it; see
+  REPORT.md's Safety section for why this genuinely blocks execution.
+- **Escalation and handoff:** in the Run Discovery form, use a goal that hits a real ambiguity
+  (e.g. a member who already has that account type). Once it escalates, take control from the
+  operator console (`http://127.0.0.1:8421/`), interact with the live (visible, non-headless)
+  browser window directly, log a note, and hand back. See REPORT.md's Escalation & handoff
+  section for exactly what each step does.
 
 ## Running without live services
 
@@ -141,17 +186,5 @@ a new capability in the first place) needs `ANTHROPIC_API_KEY`.
 
 ## Evidence
 
-See [`evidence/`](evidence/) for real discovery, replay, and escalation-handoff runs — for
-example `evidence/discovery_run_20260815T234507` (a real discovery run correctly blocked by the
-guardrails allowlist before it could leave the approved surface) and
-`evidence/discovery_run_20260816T003623` + `evidence/20260816T003623` (a real "stuck" escalation,
-handed to a human operator via the operator console, resumed, and completed). See
-[REPORT.md](REPORT.md) for the full design write-up.
-
-## Reproducing the escalation handoff manually
-
-With the operator console running (Terminal 2 above) and a discovery run currently paused on a
-real `stuck` call, visit `http://127.0.0.1:8421/` to see pending interventions, or go straight to
-`http://127.0.0.1:8421/take-control?run_id=<run_id>` to take control, log an action, and hand
-back via `http://127.0.0.1:8421/hand-back?run_id=<run_id>` — the same three routes (plus the
-dashboard) the automated demo above drives with curl.
+See [`evidence/README.md`](evidence/README.md) for an index of real discovery, replay, and
+escalation-handoff runs. See [REPORT.md](REPORT.md) for the full design write-up.

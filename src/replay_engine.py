@@ -6,7 +6,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from artifact_schema import ArtifactStep, CapabilityArtifact
 from guardrails import check_allowlist, check_risk_policy, load_guardrails_config, redact, request_confirmation
@@ -216,8 +216,36 @@ def _append_log(path: Path, record: Dict[str, Any], config: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def replay_artifact(artifact: CapabilityArtifact, params: Dict[str, Any], adapter: SurfaceAdapter) -> ReplayResult:
-    """Deterministically execute a CapabilityArtifact against a live SurfaceAdapter session. No LLM involved."""
+def replay_artifact(
+    artifact: CapabilityArtifact,
+    params: Dict[str, Any],
+    adapter: SurfaceAdapter,
+    require_approval: bool = True,
+    confirmation_callback: Callable[[Any, Dict[str, Any]], bool] = request_confirmation,
+) -> ReplayResult:
+    """Deterministically execute a CapabilityArtifact against a live SurfaceAdapter session. No LLM involved.
+
+    require_approval (default True) gates unattended replay on the artifact's review_status: if
+    True and artifact.review_status != "approved", this returns immediately with
+    failure_type="not_approved" and never touches the browser at all — an unattended/production
+    caller can't accidentally run a draft artifact.
+
+    confirmation_callback (default guardrails.request_confirmation) is called for irreversible
+    steps under a "require_confirmation" risk policy. It defaults to the real terminal-blocking
+    confirmation prompt, so every existing caller behaves exactly as before. Pass a different
+    callable only when a real blocking input() would be wrong for the calling context — e.g. a
+    web request handler, which has no usable stdin to answer it and would otherwise hang the
+    whole server process. See src/control_panel/app.py for that case: it gates on an explicit
+    "confirmed" checkbox in the web form *before* ever calling replay_artifact(), then passes a
+    callback that simply returns True, since human confirmation already happened in the browser.
+
+    Pass require_approval=False to deliberately bypass that gate for manual testing/review of an
+    unapproved artifact — e.g. running a brand-new draft artifact's first few confidence-building
+    replays (see confidence.replay_and_record()) before a human approves it. This is an
+    intentional escape hatch for a human explicitly choosing to run a draft artifact, not a hole
+    in the gate: nothing in this codebase passes require_approval=False on an unattended caller's
+    behalf.
+    """
     config = load_guardrails_config()
 
     run_id = time.strftime("%Y%m%dT%H%M%S")
@@ -233,6 +261,17 @@ def replay_artifact(artifact: CapabilityArtifact, params: Dict[str, Any], adapte
     invalid = _validate_params(artifact, params)
     if invalid is not None:
         return _finish(invalid)
+
+    if require_approval and artifact.review_status != "approved":
+        return _finish(
+            ReplayResult(
+                status="failure",
+                failure_type="not_approved",
+                step_id=0,
+                expected="artifact review_status to be 'approved' for unattended replay",
+                observed=f"artifact review_status is {artifact.review_status!r}; unattended replay requires 'approved'",
+            )
+        )
 
     entry_url = artifact.app_target["entry_url"]
     allowed, reason = check_allowlist(entry_url, "navigate", config)
@@ -277,7 +316,7 @@ def replay_artifact(artifact: CapabilityArtifact, params: Dict[str, Any], adapte
                 )
             )
         if decision == "require_confirmation":
-            confirmed = request_confirmation(step, {"raw_value": step.value, "resolved_value": value})
+            confirmed = confirmation_callback(step, {"raw_value": step.value, "resolved_value": value})
             if not confirmed:
                 return _finish(
                     ReplayResult(

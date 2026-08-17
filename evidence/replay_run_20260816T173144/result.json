@@ -1,0 +1,11 @@
+{
+  "status": "business_outcome",
+  "outputs": null,
+  "outcome": "validation_error",
+  "message": "Detected known business outcome 'validation_error' after step 6 (click).",
+  "failure_type": null,
+  "expected": null,
+  "observed": null,
+  "screenshot_path": null,
+  "step_id": 6
+}

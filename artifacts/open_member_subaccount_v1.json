@@ -1,5 +1,5 @@
 {
-  "artifact_id": "cap_open_subaccount_v1",
+  "artifact_id": "open_member_subaccount_v1",
   "version": 1,
   "app_target": {
     "vendor_app": "ledgerhand-mock-bank",
@@ -173,7 +173,7 @@
     "recorded_at": "2026-08-15T23:15:46.892273+00:00",
     "model": "claude-sonnet-4-6"
   },
-  "review_status": "draft",
+  "review_status": "approved",
   "safety": {
     "allowlist_scope": "ledgerhand-mock-bank:members/*",
     "irreversible_step_ids": [

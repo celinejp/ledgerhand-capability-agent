@@ -2,6 +2,7 @@
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -73,14 +74,35 @@ STYLE = """
   .btn-secondary:hover { background: var(--bg); }
   .badge {
     display: inline-block;
-    padding: 3px 10px;
+    padding: 5px 12px;
     border-radius: 999px;
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.3px;
   }
+  .badge-icon { font-size: 1.2em; vertical-align: -1px; margin-right: 1px; }
   .badge-pending { background: var(--warn-bg); color: var(--warn-text); }
   .badge-resolved { background: var(--ok-bg); color: var(--ok-text); }
+  .btn:disabled { opacity: 0.65; cursor: not-allowed; }
+  .spinner {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    margin-right: 6px;
+    border: 2px solid rgba(255, 255, 255, 0.45);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty-state-big {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--text-muted);
+  }
+  .empty-state-big .icon { font-size: 32px; margin-bottom: 12px; }
+  .empty-state-big p { margin: 0; font-size: 14px; }
   table.queue { width: 100%; border-collapse: collapse; }
   table.queue th {
     text-align: left;
@@ -88,12 +110,16 @@ STYLE = """
     text-transform: uppercase;
     letter-spacing: 0.4px;
     color: var(--text-muted);
-    padding: 8px 12px;
+    padding: 14px 12px;
+    background: var(--bg);
     border-bottom: 1px solid var(--border);
   }
-  table.queue td { padding: 14px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; font-size: 14px; }
+  table.queue th:last-child, table.queue td:last-child { text-align: right; white-space: nowrap; }
+  table.queue td { padding: 18px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; font-size: 14px; }
   table.queue tr:last-child td { border-bottom: none; }
-  table.queue tr:hover { background: #f8fafc; }
+  table.queue tr { transition: background-color 0.15s ease; }
+  table.queue tr:nth-child(even) { background: #f8fafc; }
+  table.queue tr:hover { background: #eef2f6; }
   .run-link {
     color: var(--accent-dark);
     font-weight: 600;
@@ -145,10 +171,17 @@ STYLE = """
 </style>
 """
 
+FAVICON = (
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E"
+    "%3Ccircle cx='50' cy='50' r='45' fill='%230d9488'/%3E"
+    "%3Ccircle cx='50' cy='50' r='18' fill='white'/%3E%3C/svg%3E"
+)
+
 OUTER_TEMPLATE = """<!DOCTYPE html>
 <html>
 <head>
 <title>{{ title }}</title>
+<link rel="icon" type="image/svg+xml" href=\"""" + FAVICON + """\">
 {{ extra_head|default("")|safe }}
 """ + STYLE + """
 </head>
@@ -160,6 +193,18 @@ OUTER_TEMPLATE = """<!DOCTYPE html>
 <div class="container">
 {{ content|safe }}
 </div>
+<script>
+document.querySelectorAll("form[data-loading]").forEach(function (form) {
+    form.addEventListener("submit", function () {
+        var btn = form.querySelector('button[type="submit"]');
+        if (!btn) return;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span>' + form.getAttribute("data-loading");
+        var titleOverride = form.getAttribute("data-loading-title");
+        if (titleOverride) document.title = titleOverride;
+    });
+});
+</script>
 </body>
 </html>
 """
@@ -170,6 +215,7 @@ LIST_TEMPLATE = """
 <p class="section-title">Intervention Queue</p>
 <a href="/" class="btn btn-secondary">&#8635; Refresh</a>
 </div>
+{% if interventions %}
 <table class="queue">
 <tr><th>Run</th><th>Goal</th><th>Status</th><th>Created</th><th></th></tr>
 {% for i in interventions %}
@@ -178,18 +224,22 @@ LIST_TEMPLATE = """
 <td>{{ i.capability_or_goal|truncate(70) }}</td>
 <td>
 {% if i.status == "pending" %}
-<span class="badge badge-pending">Pending</span>
+<span class="badge badge-pending"><span class="badge-icon">&#9888;</span> Pending</span>
 {% else %}
-<span class="badge badge-resolved">Resolved</span>
+<span class="badge badge-resolved"><span class="badge-icon">&#10003;</span> Resolved</span>
 {% endif %}
 </td>
-<td class="timestamp">{{ i.created_at }}</td>
+<td class="timestamp" title="{{ i.created_at }}">{{ i.created_at_display }}</td>
 <td><a href="/take-control?run_id={{ i.run_id }}" class="btn">Take Control</a></td>
 </tr>
-{% else %}
-<tr><td colspan="5" class="empty-state">No interventions found under evidence/.</td></tr>
 {% endfor %}
 </table>
+{% else %}
+<div class="empty-state-big">
+<div class="icon">&#10003;</div>
+<p>No pending interventions &mdash; automation is running smoothly.</p>
+</div>
+{% endif %}
 </div>
 """
 
@@ -203,9 +253,9 @@ DETAIL_TEMPLATE = """
 <tr><td>Reason</td><td>{{ intervention.reason }}</td></tr>
 <tr><td>Status</td><td>
 {% if intervention.status == "pending" %}
-<span class="badge badge-pending">Pending</span>
+<span class="badge badge-pending">&#9888; Pending</span>
 {% else %}
-<span class="badge badge-resolved">Resolved</span>
+<span class="badge badge-resolved">&#10003; Resolved</span>
 {% endif %}
 </td></tr>
 <tr><td>Created At</td><td>{{ intervention.created_at }}</td></tr>
@@ -234,7 +284,7 @@ setInterval(function () {
 </div>
 <div class="card">
 <p class="section-title">Log an Action</p>
-<form class="action-form" method="post" action="/take-control?run_id={{ run_id }}">
+<form class="action-form" method="post" action="/take-control?run_id={{ run_id }}" data-loading="Logging...">
 <input type="text" name="action_taken" placeholder="What did you just do on the live page?">
 <button type="submit" class="btn">Log Action</button>
 </form>
@@ -283,6 +333,15 @@ def _load_human_actions(run_id):
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
+def _format_timestamp(iso_string):
+    """"Aug 16, 2026, 9:42 PM"-style display string; falls back to the raw value if unparseable."""
+    try:
+        dt = datetime.fromisoformat(iso_string)
+    except (TypeError, ValueError):
+        return iso_string
+    return dt.strftime("%b %-d, %Y, %-I:%M %p")
+
+
 DASHBOARD_REFRESH_META = '<meta http-equiv="refresh" content="5">'
 
 
@@ -297,6 +356,8 @@ def dashboard():
 
     interventions = [json.loads(path.read_text()) for path in EVIDENCE_ROOT.glob("*/intervention.json")]
     interventions.sort(key=lambda i: i.get("created_at", ""), reverse=True)
+    for i in interventions:
+        i["created_at_display"] = _format_timestamp(i.get("created_at", ""))
     pending_count = sum(1 for i in interventions if i.get("status") == "pending")
 
     return render_page(

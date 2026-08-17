@@ -33,7 +33,66 @@ ACCOUNT_TYPES = ("checking", "savings")
 
 OUTER_TEMPLATE = """<!DOCTYPE html>
 <html>
-<head><title>{{ title }}</title></head>
+<head>
+<title>{{ title }}</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f1f5f9;
+    color: #1e293b;
+    margin: 0;
+    padding: 40px 24px;
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0;
+    color: #0f766e;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    border: none;
+  }
+  body > table {
+    max-width: 640px;
+    margin: 0 auto;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    border-collapse: separate;
+    overflow: hidden;
+  }
+  td, th {
+    padding: 10px 14px;
+    border: none;
+  }
+  button {
+    background: #0d9488;
+    color: #ffffff;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  button:hover {
+    background: #0f766e;
+  }
+  input, select {
+    padding: 6px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  a {
+    color: #0d9488;
+  }
+</style>
+</head>
 <body>
 <table border="1" cellpadding="8" cellspacing="0" width="100%">
 <tr><td><h1>{{ title }}</h1></td></tr>

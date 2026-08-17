@@ -118,3 +118,13 @@ def load_artifact(path: str) -> CapabilityArtifact:
         review_status=data.get("review_status", "draft"),
         safety=data["safety"],
     )
+
+
+def approve_artifact(artifact_id: str) -> CapabilityArtifact:
+    """Set an artifact's review_status to 'approved' and re-save it. A deliberate human action — nothing calls this automatically."""
+    path = ARTIFACTS_DIR / f"{artifact_id}.json"
+    artifact = load_artifact(str(path))
+    artifact.review_status = "approved"
+    with path.open("w") as f:
+        json.dump(asdict(artifact), f, indent=2)
+    return artifact
