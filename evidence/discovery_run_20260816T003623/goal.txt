@@ -1,1 +1,0 @@
-Open a new sub-account for member 1002 with account type savings.

@@ -13,6 +13,7 @@ from flask import Flask, render_template_string, request  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 from compiler import ARTIFACTS_DIR, load_artifact  # noqa: E402
+from confidence import replay_and_record  # noqa: E402
 from discovery_loop import (  # noqa: E402
     DEFAULT_MAX_STEPS,
     DEFAULT_MODEL,
@@ -21,7 +22,6 @@ from discovery_loop import (  # noqa: E402
     SafetyViolation,
     run_discovery,
 )
-from replay_engine import replay_artifact  # noqa: E402
 from surface_adapter import SurfaceAdapter  # noqa: E402
 
 app = Flask(__name__)
@@ -118,6 +118,7 @@ STYLE = """
     outline-offset: -1px;
   }
   .hint { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .override-label { font-size: 12px; font-weight: 400; color: var(--text-muted); margin: 8px 0 4px; }
   .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 16px 0; }
   .checkbox-row input { width: auto; }
   .checkbox-row label { margin: 0; font-weight: 500; }
@@ -250,12 +251,16 @@ unresponsive until it finishes. That's expected, not a hang.</div>
 <option value="{{ v }}">{{ v }}</option>
 {% endfor %}
 </select>
+<label class="override-label" for="override_{{ inp.name }}">Override with custom value (for testing invalid input)</label>
+<input type="text" id="override_{{ inp.name }}" name="param_{{ inp.name }}_override" placeholder="e.g. business">
+<div class="hint">{{ inp.description }} Valid values: {{ inp['values']|join(', ') }}. Fill in the override above to submit a value outside this list.</div>
 {% elif inp.min is not none %}
 <input type="number" name="param_{{ inp.name }}" min="{{ inp.min }}">
+<div class="hint">{{ inp.description }}</div>
 {% else %}
 <input type="text" name="param_{{ inp.name }}">
-{% endif %}
 <div class="hint">{{ inp.description }}</div>
+{% endif %}
 {% endfor %}
 {% if not a.inputs %}
 <div class="hint">This artifact has no declared inputs.</div>
@@ -452,6 +457,14 @@ def run_discovery_route():
     )
 
 
+def _resolved_param_value(input_name: str) -> str:
+    """The override field (enum inputs only) wins over the dropdown/text value when filled in."""
+    override = request.form.get(f"param_{input_name}_override", "").strip()
+    if override:
+        return override
+    return request.form.get(f"param_{input_name}", "").strip()
+
+
 @app.route("/replay", methods=["POST"])
 def replay_route():
     artifact_filename = request.form.get("artifact_filename", "")
@@ -465,7 +478,7 @@ def replay_route():
         hidden_fields = [("artifact_filename", artifact_filename)]
         for input_param in artifact.inputs:
             field_name = f"param_{input_param.name}"
-            hidden_fields.append((field_name, request.form.get(field_name, "")))
+            hidden_fields.append((field_name, _resolved_param_value(input_param.name)))
         return render_page(
             "Control Panel — Confirm",
             CONFIRM_TEMPLATE,
@@ -475,7 +488,7 @@ def replay_route():
 
     params = {}
     for input_param in artifact.inputs:
-        value = request.form.get(f"param_{input_param.name}", "").strip()
+        value = _resolved_param_value(input_param.name)
         if value:
             params[input_param.name] = value
 
@@ -483,7 +496,7 @@ def replay_route():
         browser = playwright.chromium.launch()
         page = browser.new_page()
         adapter = SurfaceAdapter(page)
-        result = replay_artifact(
+        result = replay_and_record(
             artifact,
             params,
             adapter,
@@ -503,4 +516,4 @@ def replay_route():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=8422)
+    app.run(debug=False, port=8422)

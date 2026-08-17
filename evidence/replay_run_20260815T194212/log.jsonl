@@ -1,6 +1,0 @@
-{"step_id": 1, "action": "type_text", "params_used": {"raw_value": "{{member_id}}", "resolved_value": "1003"}, "result": {"success": true, "error_type": null, "detail": null}, "timestamp": "2026-08-15T23:42:12.985270+00:00"}
-{"step_id": 2, "action": "click", "params_used": {"raw_value": null, "resolved_value": null}, "result": {"success": true, "error_type": null, "detail": null}, "timestamp": "2026-08-15T23:42:13.522892+00:00"}
-{"step_id": 3, "action": "click", "params_used": {"raw_value": null, "resolved_value": null}, "result": {"success": true, "error_type": null, "detail": null}, "timestamp": "2026-08-15T23:42:14.065053+00:00"}
-{"step_id": 4, "action": "select_option", "params_used": {"raw_value": "{{account_type}}", "resolved_value": "checking"}, "result": {"success": true, "error_type": null, "detail": null}, "timestamp": "2026-08-15T23:42:14.104226+00:00"}
-{"step_id": 5, "action": "type_text", "params_used": {"raw_value": "{{opening_deposit}}", "resolved_value": "75"}, "result": {"success": true, "error_type": null, "detail": null}, "timestamp": "2026-08-15T23:42:14.118880+00:00"}
-{"step_id": 6, "action": "click", "params_used": {"raw_value": null, "resolved_value": null}, "result": {"success": true, "error_type": null, "detail": null}, "timestamp": "2026-08-15T23:42:14.677433+00:00"}

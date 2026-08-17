@@ -1,6 +1,7 @@
 """Minimal Flask app giving a human operator a control surface to take over and hand back the live browser session."""
 
 import json
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -168,6 +169,7 @@ STYLE = """
   .back-link { color: var(--text-muted); text-decoration: none; font-size: 14px; }
   .back-link:hover { color: var(--text); text-decoration: underline; }
   .actions-row { display: flex; gap: 10px; margin-top: 16px; align-items: center; }
+  .actions-row form, table.queue td form { margin: 0; }
 </style>
 """
 
@@ -230,7 +232,7 @@ LIST_TEMPLATE = """
 {% endif %}
 </td>
 <td class="timestamp" title="{{ i.created_at }}">{{ i.created_at_display }}</td>
-<td><a href="/take-control?run_id={{ i.run_id }}" class="btn">Take Control</a></td>
+<td><form method="post" action="/take-control?run_id={{ i.run_id }}"><button type="submit" class="btn">Take Control</button></form></td>
 </tr>
 {% endfor %}
 </table>
@@ -264,7 +266,7 @@ DETAIL_TEMPLATE = """
 <img src="/screenshot?run_id={{ intervention.run_id }}" alt="run screenshot">
 </div>
 <div class="actions-row">
-<a href="/take-control?run_id={{ intervention.run_id }}" class="btn">Take Control</a>
+<form method="post" action="/take-control?run_id={{ intervention.run_id }}"><button type="submit" class="btn">Take Control</button></form>
 <a href="/" class="back-link">&larr; Back to dashboard</a>
 </div>
 </div>
@@ -299,7 +301,7 @@ setInterval(function () {
 {% endfor %}
 </ul>
 <div class="actions-row">
-<a href="/hand-back?run_id={{ run_id }}" class="btn">Hand Control Back to Automation</a>
+<form method="post" action="/hand-back?run_id={{ run_id }}" data-loading="Handing back..."><button type="submit" class="btn">Hand Control Back to Automation</button></form>
 </div>
 </div>
 """
@@ -371,6 +373,8 @@ def dashboard():
 @app.route("/screenshot", methods=["GET"])
 def screenshot():
     run_id = request.args.get("run_id", "")
+    if not re.fullmatch(r"[\w.\-]+", run_id) or ".." in run_id:
+        abort(400, "invalid run_id")
     intervention = _load_intervention(run_id)
     if intervention is None or not intervention.get("screenshot_path"):
         abort(404)
@@ -386,9 +390,10 @@ def take_control():
     if not run_id:
         abort(400, "run_id query param is required")
 
-    if request.method == "GET":
+    # GET only ever renders the current state — set_control()/record_human_action() (state
+    # mutation) only ever fire on POST, so this page is safe to reload, bookmark, or link to.
+    if request.method == "POST":
         escalation.set_control(run_id, "human")
-    else:
         action_taken = request.form.get("action_taken", "").strip()
         if action_taken:
             escalation.record_human_action(run_id, action_taken)
@@ -397,7 +402,7 @@ def take_control():
     return render_page(f"Take Control: {run_id}", TAKE_CONTROL_TEMPLATE, run_id=run_id, actions=actions)
 
 
-@app.route("/hand-back", methods=["GET"])
+@app.route("/hand-back", methods=["POST"])
 def hand_back():
     run_id = request.args.get("run_id", "")
     if not run_id:
@@ -409,4 +414,4 @@ def hand_back():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=8421)
+    app.run(debug=False, port=8421)

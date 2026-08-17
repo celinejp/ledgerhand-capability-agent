@@ -41,6 +41,8 @@ needed — but note that every discovery and replay run loads it at startup and 
 proceed if it's missing (`load_guardrails_config()` raises `FileNotFoundError` rather than
 running with no allowlist/risk policy at all).
 
+Run the test suite: `pytest tests/ -v`
+
 ## Running the system
 
 Two terminals, both from the repo root with the venv activated.
@@ -61,6 +63,10 @@ python3 src/operator_console/app.py
 ```
 
 Serves at `http://127.0.0.1:8421`.
+
+No authentication on the operator console or control panel — intentional for this local,
+single-operator demo scope; a production version would need real auth on both, especially the
+console's session-control endpoints.
 
 ## Demo path: discover, then replay
 
@@ -110,15 +116,25 @@ valid non-error answer, e.g. member not found) · `failure` — `failure_type` i
 `invalid_params`, `locator_not_found`, `action_failed`, `session_expired`, `checkpoint_not_met`,
 `guardrail_violation`, or `not_approved` (see REPORT.md's Safety section for the approval gate).
 
+New artifacts start unapproved and can't run unattended until a human approves them based on
+real replay history — this is intentional, not a bug, if you see a `not_approved` failure the
+first time you replay a fresh artifact. Approve it with:
+
+```bash
+python3 -c "import sys; sys.path.insert(0,'src'); from compiler import approve_artifact; approve_artifact('<artifact_id>')"
+```
+
 ### Verify the confidence score
+
+Check an artifact's real replay confidence:
 
 ```bash
 python3 scripts/check_confidence.py open_member_subaccount_v1
 ```
 
 Prints `total_runs`, `success_count`, `success_rate`, and `last_run_status` computed live from
-the real replay history file, so the numbers cited in REPORT.md's Cuts section can be checked
-directly rather than taken on faith.
+`artifacts/open_member_subaccount_v1.replay_history.jsonl`, so the numbers cited in REPORT.md's
+Cuts section can be checked directly rather than taken on faith.
 
 ## Control panel (presentation-friendly UI)
 
@@ -169,6 +185,37 @@ All in the control panel's Replay Artifact form (`http://127.0.0.1:8422/`,
 - **The confirmation gate:** valid, success-shaped params still land on a confirmation page
   first (opening an account is irreversible) — check the box and submit again to run it; see
   REPORT.md's Safety section for why this genuinely blocks execution.
+- **The approval gate:** this artifact ships already approved (`review_status: "approved"`), so
+  replays work normally out of the box. To see the approval gate itself in action:
+
+  ```bash
+  # Reset to draft
+  python3 -c "
+  import sys; sys.path.insert(0, 'src')
+  import json
+  path = 'artifacts/open_member_subaccount_v1.json'
+  with open(path) as f:
+      data = json.load(f)
+  data['review_status'] = 'draft'
+  with open(path, 'w') as f:
+      json.dump(data, f, indent=2)
+  "
+
+  # Any replay now correctly refuses:
+  # status: failure, failure_type: not_approved
+
+  # Re-approve to restore normal behavior:
+  python3 -c "
+  import sys; sys.path.insert(0, 'src')
+  from compiler import approve_artifact
+  approve_artifact('open_member_subaccount_v1')
+  "
+  ```
+
+  New artifacts always start in `"draft"` — `replay_artifact()` refuses to run them unattended
+  (`require_approval=True` by default) until a human deliberately approves them, based on real
+  replay history tracked in `confidence.py` and surfaced via
+  `scripts/check_confidence.py <artifact_id>`.
 - **Escalation and handoff:** in the Run Discovery form, use a goal that hits a real ambiguity
   (e.g. a member who already has that account type). Once it escalates, take control from the
   operator console (`http://127.0.0.1:8421/`), interact with the live (visible, non-headless)

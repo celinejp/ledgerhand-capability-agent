@@ -167,8 +167,8 @@ VALIDATION_ERROR_TEMPLATE = """
 
 CONFIRMATION_TEMPLATE = """
 <table border="1" cellpadding="4" cellspacing="0">
-<tr><td>Account Number</td><td>{{ account_number }}</td></tr>
-<tr><td>Confirmation ID</td><td>{{ confirmation_id }}</td></tr>
+<tr><td colspan="2"><label>Account Number <input type="text" readonly value="{{ account_number }}"></label></td></tr>
+<tr><td colspan="2"><label>Confirmation ID <input type="text" readonly value="{{ confirmation_id }}"></label></td></tr>
 <tr><td>Member</td><td>{{ member.name }} ({{ member.id }})</td></tr>
 <tr><td>Account Type</td><td>{{ account_type }}</td></tr>
 <tr><td>Opening Deposit</td><td>${{ "%.2f"|format(deposit) }}</td></tr>
@@ -318,4 +318,4 @@ def login():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=8420)
+    app.run(debug=False, port=8420)

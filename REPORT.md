@@ -18,8 +18,8 @@ escalation** wrap both the discovery loop and the replay engine, not just one of
 
 The end-to-end thread (goal → discovery → artifact → replay → escalation) is demonstrated across
 multiple real runs rather than one artificial monolithic session, since escalation is inherently
-a rare-path event — see `evidence/discovery_run_20260815T190600` for goal → artifact and
-`evidence/discovery_run_20260816T003623` for a full escalate → resume → complete cycle.
+a rare-path event — see `evidence/discovery_run_20260816T232211` for goal → artifact and
+`evidence/discovery_run_20260816T232729` for a full escalate → resume → complete cycle.
 
 The target app is a self-built mock core-banking Flask app (`mock_app/app.py`) rather than a
 public site. Two reasons: reliable, reproducible failure injection (not-found member, validation
@@ -92,6 +92,15 @@ unexpected dialog surfaces as a hard failure rather than being auto-dismissed �
 dismissing an unknown dialog on regulated financial data without human judgment is itself a
 safety risk, not just a robustness gap.
 
+Concretely, `ReplayResult.status` only ever takes three values — `success`, `business_outcome`,
+`failure` — and `KNOWN_RECOVERABLE_STEPS` in `replay_engine.py` is currently always empty;
+nothing populates it and no evidence run demonstrates a genuinely recovered step. In this
+system, "recoverable" collapses into `success` by design (a recoverable condition gets absorbed
+via an explicit `wait_for` step during artifact review, so by replay time it's just a normal
+step that succeeds) rather than being surfaced to the caller as its own distinct outcome. This
+means a caller currently cannot distinguish "ran clean" from "recovered from a known hiccup" —
+a real limitation of the current three-way contract.
+
 ## Heterogeneity & multi-tenant
 
 This section is design-only, per the brief's "design, not necessarily build" scope for this
@@ -111,6 +120,18 @@ carry over to:
   AT-SPI on Linux) instead of Playwright — `Locator.strategy="role"` maps directly onto OS
   accessibility roles, which is why role-based locators were chosen over CSS/DOM-position
   locators in the first place.
+
+The confirmation page's extraction locators were revised from CSS `:has()`/`:nth-child()`
+selectors to label-based locators: each extracted value (`account_number`, `confirmation_id`)
+now renders inside a real `readonly` `<input>`, implicitly wrapped by a `<label>` containing the
+field's visible name (`<label>Account Number <input readonly value="...">...`), giving
+Playwright a genuine accessible name/value pair to target via `strategy="label"`. No `id`,
+`class`, `data-testid`, or `aria-*` attribute was added anywhere — the label/input pairing is
+itself completely ordinary, real-world markup (this is a genuinely common way legacy pages
+render a "copyable" confirmation value), not a synthetic hook — keeping the mock app's markup
+free of test IDs while matching the role-first locator strategy argued for above. Re-verified
+end to end: a real replay via `replay_artifact()` against the live mock app correctly extracted
+both values through the new locators (confirmed with real, freshly-generated account numbers).
 
 **What would actually change:** only `SurfaceAdapter`'s internals — a new adapter class with the
 same method signatures. Artifact schema, compiler, replay engine, guardrails, and escalation all
@@ -153,17 +174,16 @@ exception-based afterthought bolted on around the loop. The system prompt explic
 model to call it "if you cannot safely proceed — e.g. a locator has failed repeatedly, the page
 shows an unexpected state, or the next step requires a judgment call only a human should make."
 
-**Real demonstrated behavior**, not hypotheticals:
-- `evidence/discovery_run_20260816T001137` — real `stuck` (compliance sign-off needed) → real
-  escalation via `raise_intervention()` → real curl-driven take-control/hand-back against the
-  operator console's live routes → resumed from turn 6 (not restarted). The model called `stuck`
-  again on the same ambiguity, and since no second hand-back came, `wait_for_control_return()`
-  genuinely timed out after 5 minutes and `run_discovery()` raised `DiscoveryStuck` — proving the
-  timeout path works, not just the happy path.
-- `evidence/discovery_run_20260816T003623` + `evidence/20260816T003623` — a duplicate-account
-  validation error (member 1002 already has savings) triggered a real `stuck` rather than a
-  silent failure or guess. Full cycle completed: escalation → take-control → logged action →
-  hand-back → resume → `done`, `intervention.json` ending `status: "resolved"`.
+**Real demonstrated behavior**, not hypotheticals — only one escalation example remains in the
+current evidence set (an earlier compliance-sign-off/timeout example was pruned along with other
+stale runs; the mechanism it demonstrated, `wait_for_control_return()` genuinely timing out after
+5 minutes with no second hand-back, is described here for completeness but no longer has a live
+evidence folder backing it):
+- `evidence/discovery_run_20260816T232729` + `evidence/20260816T232729` — a duplicate-account
+  validation error (member 1002 already has a savings account) triggered a real `stuck` at turn
+  12 rather than a silent failure or guess. Full cycle completed: escalation → take-control →
+  logged action (`"Reviewed: duplicate account, do not retry, report outcome"`) → hand-back →
+  resumed and reached `done` at turn 13, `intervention.json` ending `status: "resolved"`.
 
 **A real bug found and fixed during this.** The initial integration called `raise_intervention()`
 then `wait_for_control_return()` without calling `set_control(run_id, "human")` — since
@@ -197,12 +217,18 @@ piping `y` into a live run and observing it proceed only after. **Redaction**: `
 recursively replaces any key matching `redaction.never_log_fields` (case-insensitive) in nested
 dicts and lists of dicts, applied to every record before `log.jsonl`.
 
+All three Flask apps (mock_app, operator_console, control_panel) run with `debug=False`;
+Werkzeug's debug mode ships an interactive Python console on unhandled exceptions, which is
+inappropriate even for a local demo given the project's subject matter.
+
 The limits, stated plainly: `require_confirmation` is a blocking CLI prompt
 (`request_confirmation()`), an explicit stand-in for a real approval-queue/API call in
 production. The allowlist is static config, hand-edited, not learned or monitored for near-miss
 patterns (the `/members/*` gap below is exactly that kind of drift). No rate limiting, no
 anomaly detection — guardrails here answer "is this one action allowed right now," not "does
-this run's overall behavior look suspicious."
+this run's overall behavior look suspicious." No authentication on the operator console or
+control panel — intentional for this local, single-operator demo scope; a production version
+would need real auth on both, especially the console's session-control endpoints.
 
 The control panel (`src/control_panel/app.py`) is where that CLI-prompt limit actually bites — a
 blocking `input()` has no usable stdin inside a web request and would hang the whole server.
@@ -222,6 +248,25 @@ not a demo workaround, fixed by broadening the route to `['/members', '/members/
 concrete example of allowlist drift real usage surfaces, which production would want to catch
 via monitoring rejected-but-plausible navigation rather than only manual testing.
 
+### Confidence/approval gate
+
+Every artifact starts with `review_status: "draft"`. `replay_artifact()`'s `require_approval`
+gate (default `True`) refuses to run an artifact unattended unless `review_status == "approved"`
+— this is a real safety gate on unattended replay, not just metadata sitting on the artifact.
+
+An artifact earns approval by proving itself: `replay_and_record()` (`confidence.py`) wraps real
+replay runs and appends each real outcome to `artifacts/<id>.replay_history.jsonl`;
+`compute_confidence()` derives `total_runs`, `success_count`, and `success_rate` from that real
+history (not synthetic data); `scripts/check_confidence.py <artifact_id>` prints those numbers
+and suggests approval once the artifact has proven itself (≥80% success over ≥3 runs) — but it
+never approves automatically. The only thing that actually flips `review_status` is a deliberate
+human call to `compiler.approve_artifact(artifact_id)` — never automatic, by design.
+
+See `evidence/replay_run_20260816T235140` for the gate correctly blocking an unapproved artifact.
+
+The artifact committed in this repo ships pre-approved for demo convenience; see README.md's
+"Trying it out" section for how to reset and re-trigger the approval gate directly.
+
 ## Cuts
 
 Manual locator verification during the artifact review pass reused the same live mock-app
@@ -230,25 +275,34 @@ members 1001 and 1004). Production would run this against an isolated staging in
 reset-per-verification harness — a deliberate cut given the mock app's simplicity; it's
 restarted before any replay demo to guarantee clean state.
 
-No automated test suite — manual and scripted verification (real discovery runs, replay
-scenarios, curl-driven escalation cycles, all shown elsewhere in this report) was used instead.
-The operator console was restyled for presentability but still lacks real live co-browsing — a
+A minimal pytest suite covers pure-logic modules with no browser/API dependency — artifact
+schema round-tripping and guardrails logic (allowlist checks, risk policy, redaction) — see
+tests/README.md for exactly what's covered and why discovery_loop.py, replay_engine.py,
+escalation.py, and the mock/operator/control-panel apps are verified via real execution and
+evidence instead, since they require a live browser and LLM API access a unit test can't
+meaningfully substitute for. The operator console was restyled for presentability but still
+lacks real live co-browsing — a
 polling screenshot refresh, not live video, is the real product gap, not the visual polish. Of
 the brief's Section 8 stretch goals, only confidence/approval was attempted (below); the rest
 were skipped to prioritize full depth on the core requirements plus that one extra. Multi-tenant
 reuse and drift detection are designed (see Heterogeneity & multi-tenant) but not built, per the
 brief's instruction not to prematurely build scaling infrastructure.
 
-**Confidence/approval, built:** `confidence.py` records every real replay's outcome to
-`artifacts/<artifact_id>.replay_history.jsonl` and scores an artifact from that history
-(`total_runs`, `success_count`, `success_rate` — `None`, not `0.0`, when there's no history yet,
-since "unknown" and "known to always fail" aren't the same thing). `replay_artifact()` gained a
-`require_approval` gate (default `True`): an artifact whose `review_status` isn't `"approved"`
-is refused with `failure_type="not_approved"` before the browser is touched. Demonstrated for
-real against `open_member_subaccount_v1` (previously `"draft"`): the gate correctly blocked,
-several real replays with `require_approval=False` built up a real 75% success rate, below the
-80%-over-3-runs approval-suggestion threshold `scripts/check_confidence.py` uses, and after
-manually approving via `compiler.approve_artifact()` — never called automatically —
-the same call that was blocked earlier succeeded. Verify this directly:
-`python3 scripts/check_confidence.py open_member_subaccount_v1` prints the real computed numbers
-from `artifacts/open_member_subaccount_v1.replay_history.jsonl`.
+**Confidence/approval, built:** see Safety's "Confidence/approval gate" for how the mechanism
+works. Demonstrated end-to-end against `open_member_subaccount_v1` (previously `"draft"`): the
+gate correctly blocked an unattended replay, several real replays with `require_approval=False`
+built up a real 75% success rate — below the 80%-over-3-runs approval-suggestion threshold — and
+after manually approving via `compiler.approve_artifact()`, the same call that was blocked
+earlier succeeded. Verify this directly: `python3 scripts/check_confidence.py
+open_member_subaccount_v1` prints the real computed numbers from
+`artifacts/open_member_subaccount_v1.replay_history.jsonl`, computed live, not hardcoded
+(`success_rate` is `None`, not `0.0`, when there's no history yet, since "unknown" and "known to
+always fail" aren't the same thing).
+
+`ArtifactStep.business_outcome_branches` is defined in the schema and round-trips correctly, but
+`replay_engine.py` does not currently read it — business-outcome detection instead runs off a
+fixed, artifact-agnostic signature list (`KNOWN_BUSINESS_OUTCOME_SIGNATURES`). The schema field
+is forward-looking scaffolding for per-artifact business outcomes (each artifact declaring its
+own recognized outcomes rather than sharing a global list), not yet wired into the replay
+engine — a real gap between what the schema promises and what replay currently delivers, noted
+here rather than left silent.

@@ -1,2 +1,0 @@
-{"step_id": 1, "action": "type_text", "params_used": {"raw_value": "{{member_id}}", "resolved_value": "1003"}, "result": {"success": true, "error_type": null, "detail": null}, "timestamp": "2026-08-16T03:11:44.416237+00:00"}
-{"step_id": 2, "action": "click", "params_used": {"raw_value": null, "resolved_value": null}, "result": {"success": false, "error_type": "locator_not_found", "detail": "Could not resolve locator after trying: role:Nonexistent Button"}, "timestamp": "2026-08-16T03:11:49.422469+00:00"}

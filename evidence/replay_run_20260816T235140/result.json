@@ -1,0 +1,11 @@
+{
+  "status": "failure",
+  "outputs": null,
+  "outcome": null,
+  "message": null,
+  "failure_type": "not_approved",
+  "expected": "artifact review_status to be 'approved' for unattended replay",
+  "observed": "artifact review_status is 'draft'; unattended replay requires 'approved'",
+  "screenshot_path": null,
+  "step_id": 0
+}

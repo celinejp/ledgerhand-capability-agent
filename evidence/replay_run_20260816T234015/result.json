@@ -1,0 +1,14 @@
+{
+  "status": "success",
+  "outputs": {
+    "account_number": "7511735809",
+    "confirmation_id": "CONF-CIQNHFUW"
+  },
+  "outcome": null,
+  "message": null,
+  "failure_type": null,
+  "expected": null,
+  "observed": null,
+  "screenshot_path": null,
+  "step_id": null
+}

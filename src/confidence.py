@@ -3,11 +3,10 @@
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
-from playwright.sync_api import sync_playwright
-
-from compiler import load_artifact
+from artifact_schema import CapabilityArtifact
+from guardrails import request_confirmation
 from replay_engine import ReplayResult, replay_artifact
 from surface_adapter import SurfaceAdapter
 
@@ -18,21 +17,29 @@ def _history_path(artifact_id: str) -> Path:
     return ARTIFACTS_DIR / f"{artifact_id}.replay_history.jsonl"
 
 
-def replay_and_record(artifact_path: str, params: dict) -> ReplayResult:
-    """Replay an artifact against a fresh browser session and append the outcome to its replay history.
+def replay_and_record(
+    artifact: CapabilityArtifact,
+    params: Dict[str, Any],
+    adapter: SurfaceAdapter,
+    require_approval: bool = True,
+    confirmation_callback: Callable[[Any, Dict[str, Any]], bool] = request_confirmation,
+) -> ReplayResult:
+    """Drop-in wrapper around replay_artifact() that also appends the real outcome to the
+    artifact's replay history (artifacts/<artifact_id>.replay_history.jsonl).
 
-    Always calls replay_artifact() with require_approval=False: this function exists precisely
-    to build up confidence history for artifacts that aren't approved yet, so it's a deliberate,
-    supervised bypass of the approval gate, not an unattended production entry point.
+    Same arguments and return value as replay_artifact() — any caller of replay_artifact() can
+    switch to this instead to get confidence-tracking for free. require_approval still defaults
+    to True: this wrapper doesn't bypass the approval gate itself, it just records whatever
+    replay_artifact() actually did (including a blocked not_approved run, so approval-gate
+    failures show up in the history too).
     """
-    artifact = load_artifact(artifact_path)
-
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
-        page = browser.new_page()
-        adapter = SurfaceAdapter(page)
-        result = replay_artifact(artifact, params, adapter, require_approval=False)
-        browser.close()
+    result = replay_artifact(
+        artifact,
+        params,
+        adapter,
+        require_approval=require_approval,
+        confirmation_callback=confirmation_callback,
+    )
 
     history_path = _history_path(artifact.artifact_id)
     history_path.parent.mkdir(parents=True, exist_ok=True)

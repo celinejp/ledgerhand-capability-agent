@@ -1,0 +1,14 @@
+{
+  "status": "success",
+  "outputs": {
+    "account_number": "6238505727",
+    "confirmation_id": "CONF-BWRFC64T"
+  },
+  "outcome": null,
+  "message": null,
+  "failure_type": null,
+  "expected": null,
+  "observed": null,
+  "screenshot_path": null,
+  "step_id": null
+}

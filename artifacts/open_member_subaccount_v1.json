@@ -149,8 +149,8 @@
         {
           "output_name": "account_number",
           "locator": {
-            "strategy": "css",
-            "value": "tr:has(> td:text-is('Account Number')) > td:nth-child(2)",
+            "strategy": "label",
+            "value": "Account Number",
             "role": null,
             "fallback": null
           }
@@ -158,8 +158,8 @@
         {
           "output_name": "confirmation_id",
           "locator": {
-            "strategy": "css",
-            "value": "tr:has(> td:text-is('Confirmation ID')) > td:nth-child(2)",
+            "strategy": "label",
+            "value": "Confirmation ID",
             "role": null,
             "fallback": null
           }

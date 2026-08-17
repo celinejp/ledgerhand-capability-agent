@@ -1,0 +1,12 @@
+{
+  "intervention_id": "intervention_f4a337c2",
+  "run_id": "20260816T232729",
+  "capability_or_goal": "Look up member 1002 and open a new savings sub-account.",
+  "current_step_id": 11,
+  "reason": "The system returned a validation error stating \"Member already has a savings account.\" Member 1002 cannot open a new savings sub-account because one already exists. This requires human judgment to decide how to proceed (e.g., open a different account type, or investigate the existing savings account).",
+  "status": "resolved",
+  "created_at": "2026-08-17T03:34:57.229084+00:00",
+  "screenshot_path": "evidence/20260816T232729/intervention_f4a337c2.png",
+  "resolution_note": "Handed back by operator",
+  "resolved_at": "2026-08-17T03:36:01.619532+00:00"
+}
